@@ -6,21 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Walks a parsed Lua AST and infers the peripheral/module type of every
- * variable that can be statically resolved.
- *
- * Patterns recognised:
- *   local x    = peripheral.wrap("monitor")   >>> x >>> "monitor"
- *   local x, y = peripheral.find("speaker")   >>> x, y >>> "speaker"
- *   local x    = require("cc.pretty")         >>> x >>> "cc.pretty"
- *   local x    = fs                            >>> x >>> "fs"  (known-module alias)
- *   x          = peripheral.wrap("drive")      >>> x >>> "drive"
- *
- * All scopes write into one flat output map; later definitions overwrite earlier
- * ones (last-write-wins). This is intentional: for CC scripts the common case is
- * a file-level peripheral declared once and used everywhere.
- */
+
 final class LuaTypeResolver {
     private LuaTypeResolver() {}
 
@@ -36,7 +22,7 @@ final class LuaTypeResolver {
         "paintutils", "window", "multishell", "pocket", "disk", "shell",
         "commands", "modem", "monitor", "speaker", "drive", "computer",
         "math", "string", "table", "coroutine", "bit32", "io", "os",
-        "cc"
+        "utf8", "cc"
     );
 
     private static boolean isKnownModule(String name) {
@@ -63,15 +49,6 @@ final class LuaTypeResolver {
         return resolve(chunk, Map.of());
     }
 
-    /**
-     * Collects names visible at {@code cursorLine} (0-based) by walking only the
-     * scopes that enclose that line.  Names declared in sibling blocks the cursor
-     * has already passed, or in child blocks it has not entered, are excluded.
-     *
-     * Block containment is determined by the AST node's recorded {@code endLine}
-     * (the line of the closing {@code end}/{@code until} keyword), so names inside
-     * a block are never leaked to code after the block closes.
-     */
     public static Set<String> collectNames(LuaAst.Chunk chunk, int cursorLine) {
         Set<String> out = new LinkedHashSet<>();
         collectNamesBlock(chunk.body(), cursorLine, out);
@@ -144,7 +121,6 @@ final class LuaTypeResolver {
         }
     }
 
-    // AST walker
 
     private static void walkBlock(List<LuaAst.Stat> stats, Map<String, String> out,
                                   Map<String, String> sideToType) {
@@ -255,14 +231,7 @@ final class LuaTypeResolver {
         return null;
     }
 
-    /**
-     * Resolves a string passed to peripheral.wrap/find to a peripheral type.
-     *
-     * Priority:
-     *   1. Server-supplied live map (covers sides like "top" and wired names like "monitor_0")
-     *   2. Wired-name heuristic: strip trailing _N suffix ("redstone_relay_0" >>> "redstone_relay")
-     *   3. Fall back to the raw normalised value (handles literal type names)
-     */
+
     private static String resolvePeripheralName(String raw, Map<String, String> sideToType) {
         if (raw == null || raw.isBlank()) return null;
 

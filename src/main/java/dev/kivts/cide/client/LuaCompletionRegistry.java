@@ -29,14 +29,15 @@ public final class LuaCompletionRegistry {
         Set.of("module/", "peripheral/", "generic_peripheral/");
 
     private static final Map<String, List<String>> STD_MEMBERS = Map.of(
-        "math",      List.of("abs","ceil","cos","deg","exp","floor","fmod","huge","ldexp","log",
-                             "max","min","modf","pi","pow","rad","random","randomseed","sin","sqrt","tan"),
-        "string",    List.of("byte","char","dump","find","format","gmatch","gsub","len",
+        "math",      List.of("abs","ceil","cos","deg","exp","floor","fmod","huge","log",
+                             "max","min","modf","pi","rad","random","randomseed","sin","sqrt","tan"),
+        "string",    List.of("byte","char","find","format","gmatch","gsub","len",
                              "lower","match","rep","reverse","sub","upper"),
-        "table",     List.of("concat","insert","maxn","move","pack","remove","sort","unpack"),
+        "table",     List.of("concat","insert","move","pack","remove","sort","unpack"),
         "coroutine", List.of("create","isyieldable","resume","running","status","wrap","yield"),
         "bit32",     List.of("arshift","band","bnot","bor","btest","bxor","extract",
-                             "lshift","replace","rshift","lrotate","rrotate")
+                             "lshift","replace","rshift","lrotate","rrotate"),
+        "utf8",      List.of("char","charpattern","codepoint","codes","len","offset")
     );
 
     public static synchronized void register(String symbol) {
