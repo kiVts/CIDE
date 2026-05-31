@@ -346,11 +346,24 @@ public final class CideLuaCatalog {
         IPERIPHERAL_INTERNAL.getBytes(StandardCharsets.UTF_8);
 
     private static void scrapeClasspathPeripherals(Map<String, List<String>> peripheralTypeMembers) {
-        for (IModFileInfo info : ModList.get().getModFiles()) {
+        java.util.List<? extends IModFileInfo> modFiles = ModList.get().getModFiles();
+        LOG.info("Beginning to parse loaded mods for function names. Amount: {}", modFiles.size());
+        int functionsBefore = countAllFunctions(peripheralTypeMembers);
+        for (IModFileInfo info : modFiles) {
             try {
                 scanModFile(info.getFile(), peripheralTypeMembers);
             } catch (Throwable ignored) {}
         }
+        // some logging
+        int functionsAfter = countAllFunctions(peripheralTypeMembers);
+        LOG.info("Completed looking through mods for function mods, found {} functions!",
+            functionsAfter - functionsBefore);
+    }
+
+    private static int countAllFunctions(Map<String, List<String>> members) {
+        int total = 0;
+        for (List<String> list : members.values()) if (list != null) total += list.size();
+        return total;
     }
 
     private static void scanModFile(IModFile modFile, Map<String, List<String>> peripheralTypeMembers) throws IOException {
