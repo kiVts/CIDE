@@ -1,0 +1,10 @@
+{
+  "screen.cide.title": "CIDE",
+  "screen.cide.save": "Save",
+  "screen.cide.refresh": "Refresh",
+  "screen.cide.new_file": "New File",
+  "screen.cide.read_only": "Server read-only mode",
+  "screen.cide.no_file": "Select a file",
+  "message.cide.denied": "CIDE denied the request: %s",
+  "message.cide.saved": "Saved %s"
+}

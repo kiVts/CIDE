@@ -1,0 +1,45 @@
+# Gradle
+.gradle/
+build/
+!build.gradle
+!build.gradle.kts
+gradle-app.setting
+.gradletasknamecache
+
+# Mod runtime
+run/
+runs/
+logs/
+
+# IDE - IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# IDE - Eclipse
+.eclipse/
+.classpath
+.project
+.settings/
+bin/
+
+# IDE - VSCode
+.vscode/
+
+# IDE - NetBeans
+nbproject/private/
+
+# Compiled
+*.class
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Optional caches
+*.log
+hs_err_pid*
+replay_pid*

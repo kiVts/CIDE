@@ -1,0 +1,32 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+issueTrackerURL="https://github.com/kivts/cide/issues"
+
+[[mods]]
+modId="cide"
+version="${version}"
+displayName="CIDE"
+authors="kivts"
+description='''A safer, configurable IDE item for editing CC:Tweaked computer files.'''
+
+[[dependencies.cide]]
+    modId="neoforge"
+    type="required"
+    versionRange="${neoforge_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.cide]]
+    modId="minecraft"
+    type="required"
+    versionRange="[${minecraft_version}]"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.cide]]
+    modId="computercraft"
+    type="required"
+    versionRange="[1.114.0,)"
+    ordering="AFTER"
+    side="BOTH"

@@ -1,0 +1,117 @@
+plugins {
+    id "net.neoforged.moddev" version "2.0.141"
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    maven { url = "https://maven.squiddev.cc/" }
+    maven { url = "https://api.modrinth.com/maven" }
+}
+
+neoForge {
+    version = project.neoforge_version
+
+    mods {
+        cide {
+            sourceSet sourceSets.main
+        }
+    }
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+            gameDirectory = file("run/server")
+            programArgument "--nogui"
+        }
+    }
+}
+
+dependencies {
+    implementation "cc.tweaked:cc-tweaked-${project.minecraft_version}-forge:${project.cc_tweaked_version}"
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "minecraft_version", project.minecraft_version
+    inputs.property "neoforge_version", project.neoforge_version
+    inputs.property "neoforge_version_range", project.neoforge_version_range
+    filteringCharset "UTF-8"
+
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand "version": project.version,
+            "minecraft_version": project.minecraft_version,
+            "neoforge_version_range": project.neoforge_version_range
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+// Wiki content is pulled from the CIDE-WIKI GitHub repository and copied into
+// the mod's resource path. Override the repo via -PcideWikiRepoUrl / -PcideWikiRef,
+// or point at a local checkout with -PcideWikiRepoDir.
+def cideWikiRepoUrl = providers.gradleProperty("cideWikiRepoUrl")
+    .orElse("https://github.com/kiVts/CIDE-WIKI.git")
+def cideWikiRef = providers.gradleProperty("cideWikiRef").orElse("main")
+def cideWikiRepoDir = providers.gradleProperty("cideWikiRepoDir")
+    .map { file(it) }
+    .orElse(layout.buildDirectory.dir("cide-wiki").map { it.asFile })
+
+def runCommand = { File workingDirectory, List<String> command ->
+    def process = new ProcessBuilder(command)
+        .directory(workingDirectory)
+        .redirectErrorStream(true)
+        .start()
+    def output = process.inputStream.getText("UTF-8")
+    def code = process.waitFor()
+    if (code != 0) throw new GradleException("${command.join(' ')} failed with exit code ${code}\n${output}")
+    if (!output.isBlank()) println output.trim()
+}
+
+tasks.register("checkoutWiki") {
+    inputs.property("repoUrl", cideWikiRepoUrl)
+    inputs.property("ref", cideWikiRef)
+
+    doLast {
+        def repoDir = cideWikiRepoDir.get()
+        if (project.hasProperty("cideWikiRepoDir")) {
+            if (!new File(repoDir, "wiki").isDirectory()) {
+                throw new GradleException("cideWikiRepoDir must contain a wiki directory: ${repoDir}")
+            }
+            return
+        }
+
+        if (new File(repoDir, ".git").isDirectory()) {
+            runCommand(repoDir, ["git", "fetch", "--depth", "1", "origin", cideWikiRef.get()])
+            runCommand(repoDir, ["git", "checkout", "FETCH_HEAD"])
+        } else {
+            repoDir.parentFile.mkdirs()
+            runCommand(project.projectDir, ["git", "clone", "--depth", "1", "--branch", cideWikiRef.get(), cideWikiRepoUrl.get(), repoDir.absolutePath])
+        }
+    }
+}
+
+def syncWiki = tasks.register("syncWiki", Copy) {
+    dependsOn tasks.named("checkoutWiki")
+    from(cideWikiRepoDir.map { new File(it, "wiki") })
+    into layout.buildDirectory.dir("generated/wiki/data/cide/wiki")
+    include "*.json"
+}
+
+sourceSets.main.resources.srcDir(layout.buildDirectory.dir("generated/wiki"))
+processResources.dependsOn syncWiki
