@@ -69,7 +69,11 @@ public final class CideClient {
     }
 
     public static void handleLuaManifest(LuaManifestPayload payload) {
-        LuaCompletionRegistry.applyManifest(payload.globals(), payload.globalMembers(), payload.peripheralTypeMembers());
+        try {
+            LuaCompletionRegistry.applyManifest(payload.globals(), payload.globalMembers(), payload.peripheralTypeMembers());
+        } catch (Throwable ignored) {
+            // Manifest is best-effort autocomplete data; never let it break the session.
+        }
     }
 
     public static void handleWikiSyncChunk(WikiSyncChunkPayload payload) {
