@@ -23,7 +23,6 @@ public final class CideClient {
     private CideClient() {
     }
 
-    // Datapack wiki sync: bounded reassembly buffer. Caps mirror the server-side limits.
     private static final int WIKI_SYNC_MAX_CHUNKS = 16;
     private static final int WIKI_SYNC_MAX_BYTES  = 256 * 1024;
     private static byte[][] wikiSyncChunks;

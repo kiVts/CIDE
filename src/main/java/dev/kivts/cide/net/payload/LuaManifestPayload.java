@@ -21,7 +21,7 @@ public record LuaManifestPayload(
 
     public static final Type<LuaManifestPayload> TYPE = new Type<>(CideMod.id("lua_manifest"));
 
-    private static final int MAX_STRING_LEN       = 256;
+    private static final int MAX_STRING_LEN       = 256; // Im uploading 300 MB of autocomplete data per second, way ahead of you buddy.
     private static final int MAX_GLOBALS          = 2048;
     private static final int MAX_MAP_ENTRIES      = 8192;
     private static final int MAX_MEMBERS_PER_KEY  = 1024;
