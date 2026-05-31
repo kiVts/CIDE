@@ -404,6 +404,7 @@ public final class CideFileService {
                     if (p != null) {
                         sideToType.put(side.getName(), p.getType());
                         sideToPeripheral.put(side.getName(), p);
+                        collectWiredNetwork(p, sideToType, sideToPeripheral);
                     }
                 }
             }
@@ -411,6 +412,26 @@ public final class CideFileService {
 
         PacketDistributor.sendToPlayer(player, new PeripheralMapPayload(computerId, sideToType));
         PacketDistributor.sendToPlayer(player, dev.kivts.cide.server.CideLuaCatalog.buildWithAttached(sideToPeripheral));
+    }
+    //look through wired network for all peripherals, if any. used in autocomplete.
+    private static void collectWiredNetwork(IPeripheral attachedPeripheral,
+                                            Map<String, String> sideToType,
+                                            Map<String, IPeripheral> sideToPeripheral) {
+        if (!(attachedPeripheral instanceof dan200.computercraft.shared.peripheral.modem.wired.WiredModemPeripheral modem)) return;
+        try {
+            var element = modem.getNode().getElement();
+            if (!(element instanceof dan200.computercraft.shared.peripheral.modem.wired.WiredModemElement modemElement)) return;
+            Map<String, IPeripheral> remote = modemElement.getRemotePeripherals();
+            synchronized (remote) {
+                for (Map.Entry<String, IPeripheral> entry : remote.entrySet()) {
+                    String name = entry.getKey();
+                    IPeripheral peripheral = entry.getValue();
+                    if (name == null || peripheral == null) continue;
+                    sideToType.putIfAbsent(name, peripheral.getType());
+                    sideToPeripheral.putIfAbsent(name, peripheral);
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     private static boolean preflight(ServerPlayer player, BlockPos pos, int computerId) {

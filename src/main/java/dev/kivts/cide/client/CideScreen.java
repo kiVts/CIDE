@@ -2031,7 +2031,7 @@ public final class CideScreen extends Screen {
                 }
             }
 
-            if (isIdentChar(c) || c == '.' || c == ':') rebuildAutocomplete();
+            if (isIdentChar(c) || c == '.' || c == ':' || c == '"' || c == '\'' || c == '-') rebuildAutocomplete();
             else { acSuggestions.clear(); acIndex = -1; }
         }
         return true;
@@ -3544,6 +3544,28 @@ public final class CideScreen extends Screen {
         return Character.isLetterOrDigit(c) || c == '_';
     }
 
+    private static final java.util.regex.Pattern PERIPHERAL_CALL =
+        java.util.regex.Pattern.compile("\\bperipheral\\.(wrap|find)\\s*\\(\\s*$");
+
+    /** Returns the column of the opening quote if the cursor is inside a single-line string literal, otherwise -1. */
+    private static int stringOpenBefore(String line, int cursor) {
+        int openIdx = -1;
+        char openChar = 0;
+        int limit = Math.min(cursor, line.length());
+        for (int i = 0; i < limit; i++) {
+            char c = line.charAt(i);
+            if (openChar == 0) {
+                if (c == '"' || c == '\'') { openChar = c; openIdx = i; }
+            } else if (c == '\\') {
+                i++;
+            } else if (c == openChar) {
+                openChar = 0;
+                openIdx = -1;
+            }
+        }
+        return openChar == 0 ? -1 : openIdx;
+    }
+
     private int[] wordRangeAt(String line, int col) {
         if (line.isEmpty()) return null;
         col = Mth.clamp(col, 0, line.length());
@@ -3618,6 +3640,29 @@ public final class CideScreen extends Screen {
         if (cursorLine >= lines.size()) return;
         refreshTypeMap();
         String line = lines.get(cursorLine);
+
+        //autocomplete peripheral names inside peripheral.wrap()
+        int openQuote = stringOpenBefore(line, cursorColumn);
+        if (openQuote >= 0) {
+            String beforeQuote = line.substring(0, openQuote);
+            java.util.regex.Matcher peripheralCall = PERIPHERAL_CALL.matcher(beforeQuote);
+            if (peripheralCall.find()) {
+                boolean isFind = "find".equals(peripheralCall.group(1));
+                acPrefix = line.substring(openQuote + 1, cursorColumn);
+                String pfx = acPrefix.toLowerCase(Locale.ROOT);
+                if (isFind) {
+                    java.util.Set<String> types = new java.util.LinkedHashSet<>(sideToType.values());
+                    for (String type : types)
+                        if (type != null && type.toLowerCase(Locale.ROOT).startsWith(pfx)) acSuggestions.add(type);
+                } else {
+                    for (String name : sideToType.keySet())
+                        if (name != null && name.toLowerCase(Locale.ROOT).startsWith(pfx)) acSuggestions.add(name);
+                }
+                acSuggestions.sort(String.CASE_INSENSITIVE_ORDER);
+                if (!acSuggestions.isEmpty()) acIndex = 0;
+                return;
+            }
+        }
 
         // Scan back over identifier chars to find the start of the current token
         int start = cursorColumn;
