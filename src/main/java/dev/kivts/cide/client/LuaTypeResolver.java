@@ -239,11 +239,10 @@ final class LuaTypeResolver {
         String live = sideToType.get(raw);
         if (live != null) return live;
 
-        // 2. Wired-network name heuristic: "speaker_0", "redstone_relay_2" >>> strip _N
         String stripped = raw.replaceAll("_\\d+$", "");
         if (!stripped.equals(raw) && !stripped.isBlank()) {
-            // Accept it if the stripped name is a known module OR looks like a valid identifier
-            if (isKnownModule(stripped) || stripped.matches("[a-z][a-z0-9_]*"))
+
+            if (isKnownModule(stripped) || stripped.matches("[A-Za-z_][A-Za-z0-9_]*"))
                 return stripped;
         }
 
