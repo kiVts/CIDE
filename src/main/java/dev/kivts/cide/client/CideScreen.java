@@ -308,6 +308,13 @@ public final class CideScreen extends Screen {
     private String acPrefix = "";
     private boolean acIsItemNamespace = false;
 
+    private final Map<String, java.util.Set<Integer>> breakpoints = new LinkedHashMap<>();
+    private String pausedFile = "";
+    private int pausedLine = -1;
+    private final Map<String, String> pausedLocals = new LinkedHashMap<>();
+    private int continueBtnX, continueBtnY, continueBtnW, continueBtnH;
+    private int stepBtnX, stepBtnY, stepBtnW, stepBtnH;
+
     // Type inference - updated lazily whenever file content changes
     private Map<String, String> typeMap         = new LinkedHashMap<>();
     private Map<String, String> lastGoodTypeMap = new LinkedHashMap<>();
@@ -561,6 +568,66 @@ public final class CideScreen extends Screen {
         active.typeMapFingerprint = 0; // force re-resolve with new side data
     }
 
+    static void handleDebugPaused(dev.kivts.cide.net.payload.DebugPausedPayload payload) {
+        if (active == null || active.computerId != payload.computerId()) return;
+        if (payload.line() < 0) { active.clearPaused(); return; }
+        active.pausedFile = payload.file() == null ? "" : payload.file();
+        active.pausedLine = payload.line();
+        active.pausedLocals.clear();
+        if (payload.locals() != null) active.pausedLocals.putAll(payload.locals());
+        if (!active.pausedFile.isBlank() && !active.pausedFile.startsWith("rom/")) active.openIfMissing(active.pausedFile);
+    }
+
+    private void openIfMissing(String path) {
+        for (EditorTab tab : tabs) {
+            if (path.equals(tab.path())) return;
+        }
+        requestRead(path);
+    }
+
+    private boolean isPaused() {
+        return pausedLine > 0 && !pausedFile.isBlank();
+    }
+
+    private void clearPaused() {
+        pausedFile = "";
+        pausedLine = -1;
+        pausedLocals.clear();
+    }
+
+    private void sendBreakpointsToServer() {
+        if (adminView || computerId < 0) return;
+        java.util.Map<String, java.util.List<Integer>> payload = new java.util.LinkedHashMap<>();
+        for (var entry : breakpoints.entrySet()) {
+            if (entry.getValue() == null || entry.getValue().isEmpty()) continue;
+            payload.put(entry.getKey(), new java.util.ArrayList<>(entry.getValue()));
+        }
+        net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+            new dev.kivts.cide.net.payload.DebugSetBreakpointsPayload(computerId, payload));
+    }
+
+    private void sendDebugCommand(int command) {
+        if (computerId < 0) return;
+        net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+            new dev.kivts.cide.net.payload.DebugCommandPayload(computerId, command));
+        clearPaused();
+    }
+
+    private void terminateDebugIfActive() {
+        if (computerId < 0) return;
+        if (!isPaused() && breakpoints.isEmpty()) return;
+        sendConsoleAction(dev.kivts.cide.net.payload.ConsoleActionPayload.TERMINATE);
+        clearPaused();
+    }
+
+    private void toggleBreakpoint(String path, int line) {
+        if (path == null || path.isBlank() || line < 0) return;
+        java.util.Set<Integer> set = breakpoints.computeIfAbsent(path, k -> new java.util.LinkedHashSet<>());
+        if (!set.remove(line)) set.add(line);
+        if (set.isEmpty()) breakpoints.remove(path);
+        sendBreakpointsToServer();
+    }
+
     static void handleLockState(LockStatePayload payload) {
         if (active == null || active.computerId != payload.computerId()) return;
         active.lockedToPlayer = payload.lockedToPlayer();
@@ -674,6 +741,27 @@ public final class CideScreen extends Screen {
                 pendingRestoredActivePath = restoreTabs.isEmpty() ? "" : restoreTabs.get(pendingRestoredActiveIndex).path();
             }
             splitConsoleOpen = root.has("splitConsoleOpen") && root.get("splitConsoleOpen").getAsBoolean();
+
+            breakpoints.clear();
+            if (root.has("breakpoints") && root.get("breakpoints").isJsonArray()) {
+                for (var element : root.getAsJsonArray("breakpoints")) {
+                    if (!element.isJsonObject()) continue;
+                    JsonObject obj = element.getAsJsonObject();
+                    String path = cleanSessionPath(getString(obj, "path", ""));
+                    if (path == null || path.isBlank()) continue;
+                    if (!obj.has("lines") || !obj.get("lines").isJsonArray()) continue;
+                    java.util.Set<Integer> set = new java.util.LinkedHashSet<>();
+                    for (var ln : obj.getAsJsonArray("lines")) {
+                        try {
+                            int v = ln.getAsInt();
+                            if (v > 0 && v < 1_000_000) set.add(v);
+                        } catch (Exception ignored) {}
+                    }
+                    if (!set.isEmpty()) breakpoints.put(path, set);
+                }
+                if (!breakpoints.isEmpty()) sendBreakpointsToServer();
+            }
+
             for (RestoredTab tab : restoreTabs) requestRead(tab.path());
             if (restoreConsole) openConsoleTab();
             for (String dir : expandedDirs) requestList(dir);
@@ -773,6 +861,25 @@ public final class CideScreen extends Screen {
         }
         root.add("expandedDirs", dirs);
 
+        JsonArray bpArray = new JsonArray();
+        int bpFiles = 0;
+        for (Map.Entry<String, java.util.Set<Integer>> entry : breakpoints.entrySet()) {
+            if (bpFiles++ >= MAX_SESSION_TABS) break;
+            String path = cleanSessionPath(entry.getKey());
+            if (path == null || entry.getValue() == null || entry.getValue().isEmpty()) continue;
+            JsonObject obj = new JsonObject();
+            obj.addProperty("path", path);
+            JsonArray lines = new JsonArray();
+            int line = 0;
+            for (Integer ln : entry.getValue()) {
+                if (line++ >= 1024) break;
+                if (ln != null && ln > 0) lines.add(ln);
+            }
+            obj.add("lines", lines);
+            bpArray.add(obj);
+        }
+        root.add("breakpoints", bpArray);
+
         String json = GSON.toJson(root);
         return json.length() > MAX_SESSION_CHARS ? "" : json;
     }
@@ -859,6 +966,7 @@ public final class CideScreen extends Screen {
 
     @Override
     public void removed() {
+        terminateDebugIfActive();
         saveSession();
         releaseConsoleInputs();
         if (!adminView) PacketDistributor.sendToServer(new ConsoleActionPayload(pos, computerId, sessionId, ConsoleActionPayload.CLOSE));
@@ -1396,12 +1504,46 @@ public final class CideScreen extends Screen {
                 }
             }
 
+            // Paused-line highlight (whole row, scrolled with editor)
+            if (isPaused() && currentPath.equals(pausedFile) && i == pausedLine - 1) {
+                graphics.fill(editorX + 3, y - 1, editorTextRightLogical() + 4, y + LINE_H - 1, 0x55F0C040);
+            }
+
             // Line number (always at fixed position, not scrolled)
             graphics.drawString(font, String.valueOf(i + 1), x, y,
                 i == cursorLine ? 0xFFC0C8D8 : 0xFF3A4252, false);
 
+            // Breakpoint dot in the gutter
+            java.util.Set<Integer> activeBps = breakpoints.get(currentPath);
+            boolean hasBp = activeBps != null && activeBps.contains(i + 1);
+            int dotCenterX = x + LINE_NUM_W - 8;
+            int dotCenterY = y + LINE_H / 2 - 1;
+            int dotRadius = 3;
+            boolean hoverGutter = mouseInGutterRow(mouseX, mouseY, y);
+            if (hasBp) {
+                drawCircle(graphics, dotCenterX, dotCenterY, dotRadius, 0xFFE05050);
+            } else if (hoverGutter && !currentReadOnly) {
+                drawCircleOutline(graphics, dotCenterX, dotCenterY, dotRadius, 0x80808080);
+            }
+
             // Line text (scrolled)
             renderLineText(graphics, line, slice, y);
+
+            // Paused-line inline locals — filtered to identifiers that appear on this line
+            if (isPaused() && currentPath.equals(pausedFile) && i == pausedLine - 1 && !pausedLocals.isEmpty()) {
+                java.util.Set<String> identsOnLine = identifiersIn(line);
+                int afterText = slice.x() + editorTextWidth(line.substring(slice.start(), Math.min(line.length(), slice.end())));
+                int annotationX = Math.max(afterText + 12, editorX + LINE_NUM_W + 200);
+                StringBuilder sb = new StringBuilder();
+                int rendered = 0;
+                for (Map.Entry<String, String> entry : pausedLocals.entrySet()) {
+                    if (!identsOnLine.contains(entry.getKey())) continue;
+                    if (rendered++ > 0) sb.append("  ");
+                    sb.append(entry.getKey()).append(" = ").append(entry.getValue());
+                    if (rendered >= 8) { sb.append("  …"); break; }
+                }
+                if (sb.length() > 0) graphics.drawString(font, sb.toString(), annotationX, y, 0x66C8D4E8, false);
+            }
 
             // Cursor (scrolled) - hidden while the search bar has keyboard focus
             if (isEditorFocused() && !isSearchFocused() && i == cursorLine) {
@@ -1445,9 +1587,36 @@ public final class CideScreen extends Screen {
         runButtonX = splitCloseX - runButtonW - (splitConsoleOpen ? 4 : 0);
         runButtonY = y - 1;
 
+        continueBtnW = 0; stepBtnW = 0;
+        if (isPaused()) {
+            continueBtnW = font.width("Continue") + 8;
+            continueBtnH = 13;
+            stepBtnW = font.width("Step") + 8;
+            stepBtnH = 13;
+            continueBtnY = y - 1;
+            stepBtnY = y - 1;
+            stepBtnX = runButtonX - stepBtnW - 4;
+            continueBtnX = stepBtnX - continueBtnW - 3;
+        }
+
+        int headerRight = isPaused() ? continueBtnX : runButtonX;
         String header = currentPath + (currentReadOnly || !writesEnabled ? " [read-only]" : dirty ? " *" : "");
-        int maxHeaderW = Math.max(20, runButtonX - x - 6);
+        int maxHeaderW = Math.max(20, headerRight - x - 6);
         graphics.drawString(font, trimToWidth(header, maxHeaderW), x, y, 0xFFC0CCE0, false);
+
+        if (isPaused()) {
+            boolean contHover = inLogicalBox(mouseX, mouseY, continueBtnX, continueBtnY, continueBtnW, continueBtnH);
+            graphics.fill(continueBtnX, continueBtnY, continueBtnX + continueBtnW, continueBtnY + continueBtnH,
+                contHover ? 0xFF1F4B7B : 0xAA0F2645);
+            graphics.renderOutline(continueBtnX, continueBtnY, continueBtnW, continueBtnH, contHover ? 0xFF7DC0FF : 0xFF4F88C8);
+            graphics.drawString(font, "Continue", continueBtnX + 3, continueBtnY + 3, 0xFFBFD6F0, false);
+
+            boolean stepHover = inLogicalBox(mouseX, mouseY, stepBtnX, stepBtnY, stepBtnW, stepBtnH);
+            graphics.fill(stepBtnX, stepBtnY, stepBtnX + stepBtnW, stepBtnY + stepBtnH,
+                stepHover ? 0xFF4B4B7B : 0xAA262645);
+            graphics.renderOutline(stepBtnX, stepBtnY, stepBtnW, stepBtnH, stepHover ? 0xFFB0B0FF : 0xFF6868B0);
+            graphics.drawString(font, "Step", stepBtnX + 5, stepBtnY + 3, 0xFFC8C8F0, false);
+        }
 
         boolean runHover = inLogicalBox(mouseX, mouseY, runButtonX, runButtonY, runButtonW, runButtonH);
         graphics.fill(runButtonX, runButtonY, runButtonX + runButtonW, runButtonY + runButtonH,
@@ -1462,7 +1631,6 @@ public final class CideScreen extends Screen {
             graphics.renderOutline(splitCloseX, splitCloseY, splitCloseW, splitCloseH, closeHover ? 0xFFFF8794 : 0xFFFF6B6B);
             graphics.drawString(font, "x", splitCloseX + 5, splitCloseY + 2, 0xFFFFADB8, false);
         }
-
     }
 
     private void renderEditorTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -2417,6 +2585,7 @@ public final class CideScreen extends Screen {
     private void launchActiveFile() {
         if (!canRunCurrentFile()) return;
         if (dirty) save();
+        clearPaused();
         splitConsoleOpen = true;
         focusSplitConsole();
         noteConsoleMayHaveChangedFiles();
@@ -2606,8 +2775,26 @@ public final class CideScreen extends Screen {
             return true;
         }
 
+        if (btn == 0 && isPaused() && inLogicalBox(mouseX, mouseY, continueBtnX, continueBtnY, continueBtnW, continueBtnH)) {
+            sendDebugCommand(dev.kivts.cide.net.payload.DebugCommandPayload.CONTINUE);
+            return true;
+        }
+        if (btn == 0 && isPaused() && inLogicalBox(mouseX, mouseY, stepBtnX, stepBtnY, stepBtnW, stepBtnH)) {
+            sendDebugCommand(dev.kivts.cide.net.payload.DebugCommandPayload.STEP);
+            return true;
+        }
+
+        if (btn == 0 && !currentReadOnly && !currentPath.isBlank() && !currentPath.startsWith("wiki:") && !isConsolePath(currentPath)) {
+            int gutterLine = gutterLineAt(mouseX, mouseY);
+            if (gutterLine >= 0) {
+                toggleBreakpoint(currentPath, gutterLine + 1);
+                return true;
+            }
+        }
+
         if (btn == 0 && splitConsoleOpen && canRunCurrentFile()
                 && inLogicalBox(mouseX, mouseY, splitCloseX, splitCloseY, splitCloseW, splitCloseH)) {
+            terminateDebugIfActive();
             releaseConsoleInputs();
             splitConsoleOpen = false;
             focusEditor();
@@ -2856,6 +3043,7 @@ public final class CideScreen extends Screen {
         // Editor click: map screen coords into editor's logical space via unscaleEditorX/unscaleEditorY
   if (btn == 0 && inEditor(mouseX, mouseY)) {
             focusEditor();
+            acSuggestions.clear(); acIndex = -1; acIsItemNamespace = false;
             boolean hadSelection = hasSelection();
             int previousAnchorLine = selAnchorLine;
             int previousAnchorCol = selAnchorCol;
@@ -3542,6 +3730,51 @@ public final class CideScreen extends Screen {
 
     private boolean isIdentChar(char c) {
         return Character.isLetterOrDigit(c) || c == '_';
+    }
+
+    private static final java.util.regex.Pattern IDENT_PATTERN = java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+    private java.util.Set<String> identifiersIn(String line) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        if (line == null || line.isEmpty()) return out;
+        java.util.regex.Matcher m = IDENT_PATTERN.matcher(line);
+        while (m.find()) out.add(m.group());
+        return out;
+    }
+
+    private boolean mouseInGutterRow(int mouseX, int mouseY, int rowY) {
+        double lx = unscaleEditorX(mouseX);
+        double ly = unscaleEditorY(mouseY);
+        return lx >= editorX + 5 && lx < editorX + 5 + LINE_NUM_W
+            && ly >= rowY - 1 && ly < rowY + LINE_H - 1;
+    }
+
+    private int gutterLineAt(double mouseX, double mouseY) {
+        double lx = unscaleEditorX(mouseX);
+        if (lx < editorX + 5 || lx >= editorX + 5 + LINE_NUM_W) return -1;
+        int yBase = editorY + 6 + LINE_H + 3 + (searchOpen ? LINE_H + 4 : 0);
+        int row   = editorScroll + (int)((unscaleEditorY(mouseY) - yBase) / LINE_H);
+        if (row < 0 || row >= lines.size()) return -1;
+        return row;
+    }
+
+    private static void drawCircle(GuiGraphics graphics, int cx, int cy, int r, int color) {
+        int rr = r * r;
+        for (int dy = -r; dy <= r; dy++) {
+            for (int dx = -r; dx <= r; dx++) {
+                if (dx * dx + dy * dy <= rr) graphics.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, color);
+            }
+        }
+    }
+
+    private static void drawCircleOutline(GuiGraphics graphics, int cx, int cy, int r, int color) {
+        int rrOut = r * r;
+        int rrIn = (r - 1) * (r - 1);
+        for (int dy = -r; dy <= r; dy++) {
+            for (int dx = -r; dx <= r; dx++) {
+                int d = dx * dx + dy * dy;
+                if (d <= rrOut && d >= rrIn) graphics.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, color);
+            }
+        }
     }
 
     private static final java.util.regex.Pattern PERIPHERAL_CALL =

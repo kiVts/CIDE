@@ -77,10 +77,19 @@ public final class CideConsoleService {
         ServerComputer computer = resolve(player, pos, computerId, sessionId);
         if (computer == null) return;
         switch (action) {
-            case ConsoleActionPayload.TERMINATE -> computer.queueEvent("terminate");
+            case ConsoleActionPayload.TERMINATE -> {
+                computer.queueEvent("terminate");
+                CideDebugService.notifyFinished(computerId);
+            }
             case ConsoleActionPayload.TURN_ON -> computer.turnOn();
-            case ConsoleActionPayload.SHUTDOWN -> computer.shutdown();
-            case ConsoleActionPayload.REBOOT -> computer.reboot();
+            case ConsoleActionPayload.SHUTDOWN -> {
+                computer.shutdown();
+                CideDebugService.notifyFinished(computerId);
+            }
+            case ConsoleActionPayload.REBOOT -> {
+                computer.reboot();
+                CideDebugService.notifyFinished(computerId);
+            }
             default -> { return; }
         }
         touch(sessionId, computer);
@@ -132,9 +141,20 @@ public final class CideConsoleService {
 
         UserComputerInput input = inputFor(sessionId, computer);
         if (input == null) return;
+
+        boolean debug = CideDebugService.shouldDebug(computerId);
+        String command;
+        if (debug) {
+            command = CideDebugService.buildRunCommand(path);
+            if (command == null) command = shellCommand(path);
+            else CideDebugService.markActive(computerId, player, pos);
+        } else {
+            command = shellCommand(path);
+        }
+
         input.paste("clear");
         pressEnter(input);
-        input.paste(shellCommand(path));
+        input.paste(command);
         pressEnter(input);
         sendState(player, computerId, computer);
     }

@@ -54,6 +54,11 @@ public final class CidePackets {
             ctx.enqueueWork(() -> CideConsoleService.input((ServerPlayer) ctx.player(), p)));
         r.playToServer(RunProgramPayload.TYPE, RunProgramPayload.STREAM_CODEC, (p, ctx) ->
             ctx.enqueueWork(() -> CideConsoleService.runProgram((ServerPlayer) ctx.player(), p.pos(), p.computerId(), p.sessionId(), p.path())));
+        r.playToServer(DebugSetBreakpointsPayload.TYPE, DebugSetBreakpointsPayload.STREAM_CODEC, (p, ctx) ->
+            ctx.enqueueWork(() -> dev.kivts.cide.server.CideDebugService.setBreakpoints(
+                (ServerPlayer) ctx.player(), net.minecraft.core.BlockPos.ZERO, p.computerId(), p.breakpoints())));
+        r.playToServer(DebugCommandPayload.TYPE, DebugCommandPayload.STREAM_CODEC, (p, ctx) ->
+            ctx.enqueueWork(() -> dev.kivts.cide.server.CideDebugService.sendCommand((ServerPlayer) ctx.player(), p.computerId(), p.command())));
 
         r.playToClient(OpenIdePayload.TYPE,     OpenIdePayload.STREAM_CODEC,     (p, ctx) ->
             ctx.enqueueWork(() -> CideClient.open(p)));
@@ -79,6 +84,8 @@ public final class CidePackets {
             ctx.enqueueWork(() -> CideClient.handleWikiSyncChunk(p)));
         r.playToClient(LuaManifestPayload.TYPE, LuaManifestPayload.STREAM_CODEC, (p, ctx) ->
             ctx.enqueueWork(() -> CideClient.handleLuaManifest(p)));
+        r.playToClient(DebugPausedPayload.TYPE, DebugPausedPayload.STREAM_CODEC, (p, ctx) ->
+            ctx.enqueueWork(() -> CideClient.handleDebugPaused(p)));
     }
 
     public static void sendDenied(ServerPlayer player, String reason) {

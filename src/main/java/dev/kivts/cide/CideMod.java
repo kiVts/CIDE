@@ -55,7 +55,10 @@ public final class CideMod {
         modContainer.registerConfig(ModConfig.Type.CLIENT, CideClientConfig.SPEC);
 
         modBus.addListener(CidePackets::register);
-        modBus.addListener((net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent e) -> CideLuaCatalog.prewarm());
+        modBus.addListener((net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent e) -> {
+            CideLuaCatalog.prewarm();
+            dan200.computercraft.api.ComputerCraftAPI.registerAPIFactory(dev.kivts.cide.server.CideDebugAPI::new);
+        });
 
         // Block computers (Turtles are enemy propaganda)
         NeoForge.EVENT_BUS.addListener((PlayerInteractEvent.RightClickBlock e) -> {

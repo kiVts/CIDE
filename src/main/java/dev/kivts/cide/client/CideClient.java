@@ -4,6 +4,7 @@ import dev.kivts.cide.net.payload.FileContentPayload;
 import dev.kivts.cide.net.payload.FileContentChunkPayload;
 import dev.kivts.cide.net.payload.FileListPayload;
 import dev.kivts.cide.net.payload.LockStatePayload;
+import dev.kivts.cide.net.payload.DebugPausedPayload;
 import dev.kivts.cide.net.payload.LuaManifestPayload;
 import dev.kivts.cide.net.payload.OpenIdePayload;
 import dev.kivts.cide.net.payload.OperationResultPayload;
@@ -65,6 +66,10 @@ public final class CideClient {
 
     public static void handleConsoleState(ConsoleStatePayload payload) {
         CideScreen.handleConsoleState(payload);
+    }
+
+    public static void handleDebugPaused(DebugPausedPayload payload) {
+        CideScreen.handleDebugPaused(payload);
     }
 
     public static void handleLuaManifest(LuaManifestPayload payload) {
